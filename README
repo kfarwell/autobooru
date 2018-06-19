@@ -1,0 +1,10 @@
+Autobooru
+=========
+Imageboard with automatic tag generation using [Illustration2Vec](http://illustration2vec.net/)
+
+Dependencies
+------------
+* plan9port or 9base (see README.werc)
+* ImageMagick
+* jpegoptim
+* Illustration2Vec (recommended, if you don't want to use demo.illustration2vec.net)

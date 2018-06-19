@@ -1,0 +1,86 @@
+fn conf_enable_imageboard {
+    enable_imageboard=yes
+    conf_enable_app autobooru
+}
+
+fn autobooru_init {
+    if(! ~ $#enable_imageboard 0) {
+        if(~ $req_path /) {
+            handler_body_main=(tpl_handler `{get_lib_file autobooru/post.tpl apps/autobooru/post.tpl})
+            ll_add handlers_body_foot tpl_handler `{get_lib_file autobooru/post.tpl apps/autobooru/list.tpl}
+            if(test -f $sitedir$req_path'_header.md')
+                ll_add handlers_body_head md_handler $sitedir$req_path'_header.md'
+
+            if(~ $REQUEST_METHOD POST && ! ~ $"post_arg_images '') {
+                for(i in `{echo $post_arg_images | tr $NEW_LINE ' '})
+                    if(~ $i *.gif  ||
+                       ~ $i *.jpeg ||
+                       ~ $i *.jpg  ||
+                       ~ $i *.png  ||
+                       ~ $i *.ff   ||
+                       ~ $i *.tif  ||
+                       ~ $i *.tiff ||
+                       ~ $i *.bmp) {
+                        file=`{basename $i | sed 's/[^a-zA-Z0-9_.]//g; s/thumb//g'}
+                        if(test -f $sitedir/up/$file)
+                            file=`{echo $file | sed 's/(.*)\.(.*$)/\1_'`{date -n}^'.\2/'}
+                        name=`{echo $file | sed 's/\.(gif|jpeg|jpg|png|ff|tif|tiff|bmp)$//'}
+                        ext=`{echo $file | sed 's/.*\.(gif|jpeg|jpg|png|ff|tif|tiff|bmp)$/\1/'}
+
+                        curl $i > $sitedir/up/$file
+                        # make sure it's a real image
+                        if(convert $sitedir/up/$file /tmp/autobooru.jpg &&
+                           convert $sitedir/up/$file /tmp/autobooru.png) {
+                            # you can cleanly remove the jpeg convert and
+                            # jpegoptim, but demo.illustration2vec.net will
+                            # refuse images that are too large
+                            convert $sitedir/up/$file $sitedir/up/$name.jpg
+                            file=`{echo $file | sed 's/'$ext'$/jpg/'}
+                            ext=jpg
+
+                            jpegoptim -S100 $sitedir/up/$file >/dev/null
+                            chmod +r $sitedir/up/$file
+
+                            convert -thumbnail 200x200 $sitedir/up/$file $sitedir/up/$name.thumb.$ext
+    
+                            curl -F image'='@$sitedir/up/$file http://demo.illustration2vec.net/upload > $sitedir/up/$name.txt
+                            tags=`{sed 's/{.*"prediction": {//; s/}.*//;
+                                        s/"[a-z]*": \[//g;
+                                        s/[\[\],]//g;
+                                        s/"([^"]*)" ([0-9.]*)/\1:\2|/g;
+                                        s/\| */|/g;
+                                        s/ /_/g' <$sitedir/up/$name.txt \
+                                        | tr '|' $NEW_LINE}
+    
+                            echo '<h1>'$name'</h1>' > $sitedir/up/$name.html
+                            echo '<img class="materialboxed" width="100%" src="/up/'$file'" /><br />' >> $sitedir/up/$name.html
+                            for(i in $tags) {
+                                tag=`{echo $i | sed 's/:.*//'}
+                                confidence=`{echo $i | sed 's/.*://'}
+    
+                                echo '<form action="/search" method="post" style="display: inline">
+                                          <input type="hidden" name="search" value="'$tag'">
+                                          <input type="hidden" name="confidence" value="0.50">
+                                          <button type="submit" class="tag tooltipped" style="opacity: '$confidence'" data-position="top" data-delay="50" data-tooltip="'`{echo $confidence | awk '{print ($1 * 100)}'}^'% confidence">
+                                              <div class="chip">
+                                                  '$tag'
+                                              </div>
+                                          </button>
+                                      </form>' >> $sitedir/up/$name.html
+    
+                                tagf=$sitedir/_werc/tags/$tag
+                                if(! test -f $tagf) touch $tagf
+                                echo $name.thumb.$ext:$confidence >> $tagf
+                            }
+                        }
+                        if not rm $sitedir/up/$file
+                    }
+
+                post_redirect $base_url/up/$name
+            }
+        }
+        if not if(~ $req_path /search && ~ $#post_arg_search 1 &&
+                  ~ `{echo $"post_arg_confidence | awk '{print ($1 >= 0.25 && $1 <= 0.95)}'} 1)
+            handler_body_main=(tpl_handler `{get_lib_file autobooru/search.tpl apps/autobooru/search.tpl})
+    }
+}
