@@ -8,3 +8,7 @@ Dependencies
 * ImageMagick
 * jpegoptim
 * Illustration2Vec (recommended, if you don't want to use demo.illustration2vec.net)
+
+License
+-------
+ISC
